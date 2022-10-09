@@ -1,0 +1,4 @@
+http://emulator101.com/
+http://www.emulator101.com/8080-by-opcode.html
+https://github.com/LemonBoy/Space-Invaders-Emulator
+https://drakeor.com/uploads/8080-Programmers-Manual.pdf

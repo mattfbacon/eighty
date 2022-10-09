@@ -1,0 +1,3 @@
+[workspace]
+members = ["eighty", "byte-pattern"]
+resolver = "2"
