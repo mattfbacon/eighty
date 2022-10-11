@@ -189,13 +189,8 @@ fn emulate(program: &[u8], start: u16) {
 
 	spawn_emulator(Arc::clone(&pixels), emulator);
 
-	let mut focused = true;
 	event_loop.run(move |event, _, control_flow| {
-		if focused {
-			control_flow.set_wait_until(Instant::now() + Duration::from_secs_f32(1.0 / 60.0));
-		} else {
-			control_flow.set_wait();
-		}
+		control_flow.set_wait_until(Instant::now() + Duration::from_secs_f32(1.0 / 60.0));
 
 		match event {
 			Event::RedrawRequested(..) => {
@@ -227,9 +222,6 @@ fn emulate(program: &[u8], start: u16) {
 						.lock()
 						.unwrap()
 						.resize_surface(new_size.width, new_size.height);
-				}
-				WindowEvent::Focused(value) => {
-					focused = value;
 				}
 				_ => (),
 			},
