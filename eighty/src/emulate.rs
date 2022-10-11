@@ -232,24 +232,9 @@ pub enum Button {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum ButtonState {
-	Pressed,
-	Released,
-}
-
-impl ButtonState {
-	pub fn pressed(self) -> bool {
-		match self {
-			Self::Pressed => true,
-			Self::Released => false,
-		}
-	}
-}
-
-#[derive(Debug, Clone, Copy)]
 pub struct ButtonEvent {
 	pub button: Button,
-	pub state: ButtonState,
+	pub pressed: bool,
 }
 
 impl ButtonEvent {
@@ -297,7 +282,7 @@ impl Buttons {
 	}
 
 	pub fn update(&mut self, event: ButtonEvent) {
-		self.set_bit(event.to_bit(), event.state.pressed());
+		self.set_bit(event.to_bit(), event.pressed);
 	}
 }
 
