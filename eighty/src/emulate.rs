@@ -266,10 +266,6 @@ impl Buttons {
 		self.port_1
 	}
 
-	pub fn port_2(self) -> u8 {
-		0
-	}
-
 	fn set_bit(&mut self, bit: u8, value: bool) {
 		let byte = &mut self.port_1;
 
@@ -622,7 +618,7 @@ impl<S: FnMut(Sound)> Emulator<S> {
 		Some(match port {
 			0 => 0b0000_1110,
 			1 => self.buttons.port_1(),
-			2 => self.buttons.port_2(),
+			2 => 0,
 			3 => self.shift_register.read(),
 			_ => {
 				log::warn!("unattached port 0x{port:02x}");
