@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use args::{Args, Command, DisassembleCommand, EmulateCommand};
-use winit::event::{Event, WindowEvent};
+use winit::event::{Event, VirtualKeyCode};
 
 mod args;
 mod decode;
@@ -69,15 +69,28 @@ fn main() {
 	}
 }
 
+const BUTTON_MAP: &[(VirtualKeyCode, emulate::Button)] = {
+	use emulate::Button;
+	&[
+		(VirtualKeyCode::A, Button::Left),
+		(VirtualKeyCode::D, Button::Right),
+		(VirtualKeyCode::W, Button::Shoot),
+		(VirtualKeyCode::S, Button::Start),
+		(VirtualKeyCode::C, Button::Coin),
+	]
+};
+
 fn emulate(program: &[u8], start: u16) {
 	const WIDTH: u16 = 224;
 	const HEIGHT: u16 = 256;
 
-	let mut emulator = emulate::Emulator::new(program, start, true);
+	let (button_sender, button_receiver) = std::sync::mpsc::channel();
+
+	let mut emulator = emulate::Emulator::new(program, start, false, button_receiver);
 
 	let event_loop = winit::event_loop::EventLoop::new();
 	let window = winit::window::WindowBuilder::new()
-		.with_inner_size(winit::dpi::LogicalSize {
+		.with_min_inner_size(winit::dpi::LogicalSize {
 			width: WIDTH,
 			height: HEIGHT,
 		})
@@ -90,6 +103,8 @@ fn emulate(program: &[u8], start: u16) {
 		.render_texture_format(pixels::wgpu::TextureFormat::Bgra8UnormSrgb)
 		.build()
 		.unwrap();
+
+	let mut input = winit_input_helper::WinitInputHelper::new();
 
 	let pixels = Arc::new(Mutex::new(pixels));
 
@@ -131,29 +146,41 @@ fn emulate(program: &[u8], start: u16) {
 	event_loop.run(move |event, _, control_flow| {
 		control_flow.set_wait_until(Instant::now() + Duration::from_secs_f32(1.0 / 60.0));
 
-		match event {
-			Event::WindowEvent {
-				event: WindowEvent::CloseRequested,
-				..
-			} => {
+		if let Event::RedrawRequested(..) = event {
+			pixels.lock().unwrap().render().unwrap();
+		}
+
+		if input.update(&event) {
+			if input.quit() {
 				control_flow.set_exit();
 			}
-			Event::MainEventsCleared => {
-				window.request_redraw();
-			}
-			Event::WindowEvent {
-				event: WindowEvent::Resized(new_size),
-				..
-			} => {
+
+			if let Some(new_size) = input.window_resized() {
 				pixels
 					.lock()
 					.unwrap()
 					.resize_surface(new_size.width, new_size.height);
 			}
-			Event::RedrawRequested(_id) => {
-				let _ = pixels.lock().unwrap().render();
+
+			for &(key, button) in BUTTON_MAP {
+				if input.key_pressed(key) {
+					button_sender
+						.send(emulate::ButtonEvent {
+							button,
+							state: emulate::ButtonState::Pressed,
+						})
+						.unwrap();
+				} else if input.key_released(key) {
+					button_sender
+						.send(emulate::ButtonEvent {
+							button,
+							state: emulate::ButtonState::Released,
+						})
+						.unwrap();
+				}
 			}
-			_ => (),
+
+			window.request_redraw();
 		}
 	});
 }

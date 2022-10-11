@@ -1,3 +1,4 @@
+use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use crate::decode::{
@@ -221,12 +222,93 @@ impl ShiftRegister {
 	}
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Button {
+	Start,
+	Left,
+	Right,
+	Shoot,
+	Coin,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ButtonState {
+	Pressed,
+	Released,
+}
+
+impl ButtonState {
+	pub fn pressed(self) -> bool {
+		match self {
+			Self::Pressed => true,
+			Self::Released => false,
+		}
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ButtonEvent {
+	pub button: Button,
+	pub state: ButtonState,
+}
+
+impl ButtonEvent {
+	fn to_bit(self) -> u8 {
+		match self.button {
+			Button::Start => 2,
+			Button::Shoot => 4,
+			Button::Left => 5,
+			Button::Right => 6,
+			Button::Coin => 0,
+		}
+	}
+}
+
+#[derive(Clone, Copy)]
+pub struct Buttons {
+	port_1: u8,
+}
+
+#[allow(clippy::derivable_impls)] // may change this
+impl Default for Buttons {
+	fn default() -> Self {
+		Self { port_1: 0 }
+	}
+}
+
+impl Buttons {
+	pub fn port_1(self) -> u8 {
+		self.port_1
+	}
+
+	pub fn port_2(self) -> u8 {
+		0
+	}
+
+	fn set_bit(&mut self, bit: u8, value: bool) {
+		let byte = &mut self.port_1;
+
+		let mask = 1u8 << bit;
+		if value {
+			*byte |= mask;
+		} else {
+			*byte &= !mask;
+		}
+	}
+
+	pub fn update(&mut self, event: ButtonEvent) {
+		self.set_bit(event.to_bit(), event.state.pressed());
+	}
+}
+
 pub struct Emulator {
 	flags: Flags,
 	cycle_accurate: bool,
 	interrupts_enabled: bool,
 	regs_and_mem: RegistersAndMemory,
 	shift_register: ShiftRegister,
+	buttons: Buttons,
+	button_receiver: Receiver<ButtonEvent>,
 }
 
 const MEMORY_SIZE: usize = 64 * 1024; // 64 kb
@@ -237,7 +319,12 @@ pub enum ExecuteResult {
 }
 
 impl Emulator {
-	pub fn new(program: &[u8], start: u16, cycle_accurate: bool) -> Self {
+	pub fn new(
+		program: &[u8],
+		start: u16,
+		cycle_accurate: bool,
+		button_receiver: Receiver<ButtonEvent>,
+	) -> Self {
 		assert!(program.len() < MEMORY_SIZE - usize::from(start));
 
 		let mut memory = Box::new([0u8; MEMORY_SIZE]);
@@ -255,11 +342,13 @@ impl Emulator {
 				memory,
 			},
 			shift_register: ShiftRegister::default(),
+			buttons: Buttons::default(),
+			button_receiver,
 		}
 	}
 
 	#[allow(clippy::too_many_lines)] // giant match
-	pub fn execute_one(&mut self) -> ExecuteResult {
+	fn execute_one(&mut self) -> ExecuteResult {
 		let start_time = Instant::now();
 
 		let old_pc = self.regs_and_mem.registers.program_counter;
@@ -470,8 +559,9 @@ impl Emulator {
 
 	fn read_port(&mut self, port: u8) -> Option<u8> {
 		Some(match port {
-			1 => 0b0000_0001, // attract mode, TODO actual function
-			2 => 0b0000_0000,
+			0 => 0b0000_1110,
+			1 => self.buttons.port_1(),
+			2 => self.buttons.port_2(),
 			3 => self.shift_register.read(),
 			_ => {
 				log::warn!("unattached port 0x{port:02x}");
@@ -513,6 +603,10 @@ impl Emulator {
 				last_interrupt = Instant::now();
 			}
 
+			while let Ok(event) = self.button_receiver.try_recv() {
+				self.buttons.update(event);
+			}
+
 			match self.execute_one() {
 				ExecuteResult::Normal => continue,
 				ExecuteResult::Halt {
@@ -526,7 +620,7 @@ impl Emulator {
 				} => {
 					log::debug!("halt with interrupts enabled. waiting for interrupt.");
 					spin_sleep::sleep(
-						(last_interrupt + Duration::from_secs_f32(1.0 / 60.0)) - Instant::now(),
+						(last_interrupt + Duration::from_secs_f32(1.0 / 120.0)) - Instant::now(),
 					);
 				}
 			}

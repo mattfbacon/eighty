@@ -355,10 +355,6 @@ pub struct InstructionBuffer<'a> {
 }
 
 impl<'a> InstructionBuffer<'a> {
-	pub fn new(data: &'a [u8]) -> Self {
-		Self::new_at(data, 0)
-	}
-
 	pub fn new_at(data: &'a [u8], cursor: usize) -> Self {
 		Self { data, cursor }
 	}
