@@ -21,8 +21,6 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use args::{Args, Command, DisassembleCommand, EmulateCommand};
-use emulate::Emulator;
 use pixels::wgpu::TextureFormat;
 use pixels::{PixelsBuilder, SurfaceTexture};
 use winit::dpi::LogicalSize;
@@ -34,6 +32,9 @@ mod args;
 mod decode;
 mod emulate;
 mod util;
+
+use args::{Args, Command, DisassembleCommand, EmulateCommand};
+use emulate::{Emulator, Sound};
 
 fn main() {
 	let Args {
@@ -89,9 +90,9 @@ const BUTTON_MAP: &[(ScanCode, emulate::Button)] = {
 const WIDTH: u16 = 224;
 const HEIGHT: u16 = 256;
 
-fn spawn_emulator(
+fn spawn_emulator<S: FnMut(Sound) + Send + 'static>(
 	pixels: Arc<Mutex<pixels::Pixels>>,
-	mut emulator: Emulator,
+	mut emulator: Emulator<S>,
 ) {
 	std::thread::spawn(move || {
 		emulator.execute(|video_mem| {
@@ -126,11 +127,47 @@ fn spawn_emulator(
 	});
 }
 
+fn stream_for(sound: Sound) -> &'static [u8] {
+	match sound {
+		Sound::UfoStart => include_bytes!("../../audio/ufo.ogg"),
+		Sound::UfoStop => unreachable!(),
+		Sound::Flash => include_bytes!("../../audio/flash.ogg"),
+		Sound::Shot => include_bytes!("../../audio/shot.ogg"),
+		Sound::InvaderDie => include_bytes!("../../audio/invader-die.ogg"),
+		Sound::FleetMovement1 => include_bytes!("../../audio/fleet-movement1.ogg"),
+		Sound::FleetMovement2 => include_bytes!("../../audio/fleet-movement2.ogg"),
+		Sound::FleetMovement3 => include_bytes!("../../audio/fleet-movement3.ogg"),
+		Sound::FleetMovement4 => include_bytes!("../../audio/fleet-movement4.ogg"),
+		Sound::UfoHit => include_bytes!("../../audio/ufo-hit.ogg"),
+	}
+}
+
 fn emulate(program: &[u8], start: u16) {
 	let (button_sender, button_receiver) = std::sync::mpsc::channel();
 
+	let sound_player = audio_engine::AudioEngine::new().unwrap();
+	sound_player.set_group_volume((), 0.1);
 
-	let emulator = Emulator::new(program, start, false, button_receiver);
+	let emulator = Emulator::new(program, start, false, button_receiver, {
+		let make_sound = |player: &audio_engine::AudioEngine<()>, sound| {
+			player
+				.new_sound(audio_engine::OggDecoder::new(std::io::Cursor::new(stream_for(sound))).unwrap())
+				.unwrap()
+		};
+
+		let mut ufo_sound = make_sound(&sound_player, Sound::UfoStart);
+		move |sound| match sound {
+			Sound::UfoStart => {
+				ufo_sound.set_loop(true);
+				ufo_sound.play();
+			}
+			Sound::UfoStop => {
+				ufo_sound.set_loop(false);
+				ufo_sound.stop();
+			}
+			other => make_sound(&sound_player, other).play(),
+		}
+	});
 
 	let event_loop = EventLoop::new();
 	let window = WindowBuilder::new()

@@ -5,6 +5,7 @@ version = "0.1.0"
 
 [dependencies]
 argh = "0.1"
+audio-engine = { version = "0.4.3", features = ["ogg"], default-features = false }
 byte-pattern = { path = "../byte-pattern" }
 cpal = "0.14"
 gilrs = "0.9"

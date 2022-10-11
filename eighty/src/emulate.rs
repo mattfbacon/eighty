@@ -286,7 +286,80 @@ impl Buttons {
 	}
 }
 
-pub struct Emulator {
+#[derive(Debug, Clone, Copy)]
+pub enum Sound {
+	UfoStart,
+	UfoStop,
+	Shot,
+	Flash,
+	InvaderDie,
+	FleetMovement1,
+	FleetMovement2,
+	FleetMovement3,
+	FleetMovement4,
+	UfoHit,
+}
+
+struct SoundHandler<S> {
+	play_sound: S,
+	last_port_3: u8,
+	last_port_5: u8,
+}
+
+impl<S: FnMut(Sound)> SoundHandler<S> {
+	pub fn new(play_sound: S) -> Self {
+		Self {
+			play_sound,
+			last_port_3: 0,
+			last_port_5: 0,
+		}
+	}
+
+	pub fn write_3(&mut self, value: u8) {
+		let new = value & !self.last_port_3;
+
+		if new & (1 << 0) > 0 {
+			(self.play_sound)(Sound::UfoStart);
+		} else if (!value & self.last_port_3) & (1 << 0) > 0 {
+			(self.play_sound)(Sound::UfoStop);
+		}
+		if new & (1 << 1) > 0 {
+			(self.play_sound)(Sound::Shot);
+		}
+		if new & (1 << 2) > 0 {
+			(self.play_sound)(Sound::Flash);
+		}
+		if new & (1 << 3) > 0 {
+			(self.play_sound)(Sound::InvaderDie);
+		}
+
+		self.last_port_3 = value;
+	}
+
+	pub fn write_5(&mut self, value: u8) {
+		let new = value & !self.last_port_5;
+
+		if new & (1 << 0) > 0 {
+			(self.play_sound)(Sound::FleetMovement1);
+		}
+		if new & (1 << 1) > 0 {
+			(self.play_sound)(Sound::FleetMovement2);
+		}
+		if new & (1 << 2) > 0 {
+			(self.play_sound)(Sound::FleetMovement3);
+		}
+		if new & (1 << 3) > 0 {
+			(self.play_sound)(Sound::FleetMovement4);
+		}
+		if new & (1 << 4) > 0 {
+			(self.play_sound)(Sound::UfoHit);
+		}
+
+		self.last_port_5 = value;
+	}
+}
+
+pub struct Emulator<S> {
 	flags: Flags,
 	cycle_accurate: bool,
 	interrupts_enabled: bool,
@@ -294,6 +367,7 @@ pub struct Emulator {
 	shift_register: ShiftRegister,
 	buttons: Buttons,
 	button_receiver: Receiver<ButtonEvent>,
+	sound_handler: SoundHandler<S>,
 }
 
 const MEMORY_SIZE: usize = 64 * 1024; // 64 kb
@@ -303,12 +377,13 @@ pub enum ExecuteResult {
 	Halt { interrupts_enabled: bool },
 }
 
-impl Emulator {
+impl<S: FnMut(Sound)> Emulator<S> {
 	pub fn new(
 		program: &[u8],
 		start: u16,
 		cycle_accurate: bool,
 		button_receiver: Receiver<ButtonEvent>,
+		play_sound: S,
 	) -> Self {
 		assert!(program.len() < MEMORY_SIZE - usize::from(start));
 
@@ -329,6 +404,7 @@ impl Emulator {
 			shift_register: ShiftRegister::default(),
 			buttons: Buttons::default(),
 			button_receiver,
+			sound_handler: SoundHandler::new(play_sound),
 		}
 	}
 
@@ -558,9 +634,9 @@ impl Emulator {
 	fn write_port(&mut self, port: u8, value: u8) {
 		match port {
 			2 => self.shift_register.write_offset(value),
-			// 3 => todo!("something related to sound"),
+			3 => self.sound_handler.write_3(value),
 			4 => self.shift_register.write(value),
-			// 5 => todo!("something related to sound"),
+			5 => self.sound_handler.write_5(value),
 			6 => log::debug!("debug port: {value} 0x{value:02x} {:?}", char::from(value)),
 			_ => log::warn!("unattached port 0x{port:02x} (byte written was 0x{value:02x})"),
 		}
