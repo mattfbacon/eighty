@@ -31,7 +31,7 @@
               { "uses": "Swatinem/rust-cache@v2" },
               {
                 "name": "Install native dependencies",
-                "run": "sudo apt install libasound2-dev",
+                "run": "sudo apt install libasound2-dev libudev-dev",
               },
               {
                 "name": "Set up toolchain",
@@ -50,7 +50,7 @@
               { "uses": "Swatinem/rust-cache@v2" },
               {
                 "name": "Install native dependencies",
-                "run": "sudo apt install libasound2-dev",
+                "run": "sudo apt install libasound2-dev libudev-dev",
               },
               { "name": "Run tests", "run": "cargo test" },
             ],
